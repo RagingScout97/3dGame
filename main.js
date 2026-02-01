@@ -46,6 +46,13 @@ camera.position.y = 2; // Start slightly above ground to see the grid
 // Movement speed (how fast we move per frame)
 const moveSpeed = 0.1;
 
+// Jump and gravity variables
+const jumpSpeed = 0.15; // How fast you jump upward
+const gravity = 0.01; // How fast you fall down
+const groundLevel = 2; // Camera height when on ground
+let verticalVelocity = 0; // Current vertical speed (positive = up, negative = down)
+let isOnGround = true; // Track if player is on the ground
+
 // Mouse look sensitivity (how fast camera rotates when you move mouse)
 const mouseSensitivity = 0.002;
 
@@ -184,6 +191,26 @@ function animate() {
     if (keys.d) {
         // Strafe right
         camera.position.add(right.clone().multiplyScalar(moveSpeed));
+    }
+    
+    // Handle jumping and gravity
+    // Check if Space key is pressed and player is on ground
+    if (keys.space && isOnGround) {
+        verticalVelocity = jumpSpeed; // Start jumping upward
+        isOnGround = false; // No longer on ground
+    }
+    
+    // Apply gravity (always pulling down)
+    verticalVelocity -= gravity;
+    
+    // Update camera Y position based on velocity
+    camera.position.y += verticalVelocity;
+    
+    // Check if player hit the ground
+    if (camera.position.y <= groundLevel) {
+        camera.position.y = groundLevel; // Snap to ground level
+        verticalVelocity = 0; // Stop falling
+        isOnGround = true; // Back on ground
     }
     
     // Draw the scene from the camera's perspective
