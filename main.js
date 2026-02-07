@@ -1,221 +1,313 @@
-// Step 1: Import Three.js
+// ================================================================
+// 3D GAME - main.js
+// ================================================================
+// Third-person character game with Roblox-style camera orbit
+// Built with Three.js
+// ================================================================
+
 import * as THREE from 'three';
 
-// Step 2: Create the scene (our 3D world container)
+// ================================================================
+// SCENE SETUP
+// ================================================================
+
+// Create the scene (our 3D world container)
 const scene = new THREE.Scene();
 
-// Step 3: Create the camera (our viewpoint)
+// Create the camera (our viewpoint into the 3D world)
+// PerspectiveCamera(fieldOfView, aspectRatio, near, far)
 const camera = new THREE.PerspectiveCamera(
-    75, // Field of view (how wide we can see)
-    window.innerWidth / window.innerHeight, // Aspect ratio (width/height)
-    0.1, // Near clipping plane (objects closer than this are invisible)
-    1000 // Far clipping plane (objects farther than this are invisible)
+    75,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
 );
 
-// Step 4: Create the renderer (draws our 3D scene onto the screen)
+// Create the renderer (draws 3D scene onto the screen using WebGL)
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Step 5: Add a grid to visualize the ground (helps understand movement)
-// GridHelper creates a 2D grid: (size, divisions, color1, color2)
+// ================================================================
+// ENVIRONMENT (grid + lighting)
+// ================================================================
+
+// Grid on the ground to help visualize movement
 const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
 scene.add(gridHelper);
 
-// Step 6: Add some lighting so we can see things (not pitch black)
-// AmbientLight provides overall illumination
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // White light, 60% intensity
+// Ambient light (overall illumination so nothing is pitch black)
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
-// DirectionalLight simulates sunlight (coming from one direction)
+// Directional light (simulates sunlight from one direction)
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-directionalLight.position.set(5, 10, 5); // Position the light
+directionalLight.position.set(5, 10, 5);
 scene.add(directionalLight);
 
-// Step 7: Create a simple cube
-const geometry = new THREE.BoxGeometry(1, 1, 1); // Width, height, depth
-const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 }); // Changed to StandardMaterial for lighting
-const cube = new THREE.Mesh(geometry, material);
-cube.position.set(0, 0.5, 0); // Position cube on the grid (0.5 = half cube height)
+// Reference cube (so we have something to walk around)
+const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+const cubeMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+const cube = new THREE.Mesh(cubeGeo, cubeMat);
+cube.position.set(0, 0.5, 0);
 scene.add(cube);
 
-// Step 8: Position the camera so we can see the cube and grid
-camera.position.set(0, 2, 5); // X=0, Y=2 (slightly above ground), Z=5 (back)
-camera.position.y = 2; // Start slightly above ground to see the grid
+// ================================================================
+// BLOCK CHARACTER MODEL (Minecraft-style)
+// ================================================================
 
-// Movement speed (how fast we move per frame)
+const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xffdbac });
+
+// Character body parts
+const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), skinMaterial);
+const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.2), skinMaterial);
+const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.5, 0.15), skinMaterial);
+const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.5, 0.15), skinMaterial);
+const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.2), skinMaterial);
+const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.2), skinMaterial);
+
+// Position parts relative to body center
+head.position.set(0, 0.7, 0);
+body.position.set(0, 0.2, 0);
+leftArm.position.set(-0.3, 0.3, 0);
+rightArm.position.set(0.3, 0.3, 0);
+leftLeg.position.set(-0.1, -0.4, 0);
+rightLeg.position.set(0.1, -0.4, 0);
+
+// Group all parts into one object
+const character = new THREE.Group();
+character.add(head, body, leftArm, rightArm, leftLeg, rightLeg);
+
+// Debug arrow: shows which direction character is facing (red)
+// Points along local -Z (Three.js default "forward" direction)
+const charArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, 1, 0),   // above head
+    1, 0xff0000, 0.2, 0.1
+);
+character.add(charArrow);
+
+scene.add(character);
+
+// ================================================================
+// GAME STATE VARIABLES
+// ================================================================
+
+// Character position in the world
+const charPos = new THREE.Vector3(0, 1.5, 0);
+
+// Movement
 const moveSpeed = 0.1;
 
-// Jump and gravity variables
-const jumpSpeed = 0.15; // How fast you jump upward
-const gravity = 0.01; // How fast you fall down
-const groundLevel = 2; // Camera height when on ground
-let verticalVelocity = 0; // Current vertical speed (positive = up, negative = down)
-let isOnGround = true; // Track if player is on the ground
+// Jump & gravity
+const jumpSpeed = 0.15;
+const gravity = 0.01;
+const groundY = 1.5;        // character Y when standing on ground
+let vertVelocity = 0;
+let onGround = true;
 
-// Mouse look sensitivity (how fast camera rotates when you move mouse)
-const mouseSensitivity = 0.002;
+// ================================================================
+// CAMERA ORBIT VARIABLES
+// ================================================================
+// We use two angles to position the camera around the character:
+//   theta = horizontal orbit angle (yaw). 0 = camera behind character on +Z side.
+//   phi   = vertical orbit angle (pitch). Higher = camera is higher above character.
+//
+// REFERENCE: This follows the same spherical coordinate approach as
+// Three.js OrbitControls (see: three.js/examples/jsm/controls/OrbitControls.js)
+//
+// KEY CONVENTION:
+//   - theta = 0: camera at +Z relative to character, character faces -Z
+//   - character.rotation.y = theta makes character face AWAY from camera
+//   - Mouse right (positive deltaX) → theta DECREASES → character turns right
+//     (because Three.js positive rotation = counterclockwise, and right = clockwise)
 
-// Camera rotation angles (in radians)
-let cameraRotationX = 0; // Vertical rotation (pitch - looking up/down)
-let cameraRotationY = 0; // Horizontal rotation (yaw - looking left/right)
+let theta = 0;              // horizontal orbit angle (radians)
+let phi = 0.4;              // vertical orbit angle (radians), ~23° above horizontal
+const camDist = 5;          // distance from character to camera
+const sensitivity = 0.003;  // mouse sensitivity
 
-// Track pointer lock state to prevent flicker
-let isPointerLocked = false;
-let ignoreNextMouseMove = false; // Ignore first movement after lock (prevents jump)
+// Phi limits (prevent camera going underground or directly overhead)
+const PHI_MIN = 0.05;       // just above ground level
+const PHI_MAX = 1.4;        // ~80° above (nearly overhead)
 
-// Step 9: Keyboard input tracking
-// This object will remember which keys are currently pressed
-const keys = {
-    w: false,
-    a: false,
-    s: false,
-    d: false,
-    space: false
-};
+// ================================================================
+// INPUT TRACKING
+// ================================================================
 
-// When a key is pressed down, mark it as true
-window.addEventListener('keydown', (event) => {
-    if (event.code === 'KeyW') keys.w = true;
-    if (event.code === 'KeyA') keys.a = true;
-    if (event.code === 'KeyS') keys.s = true;
-    if (event.code === 'KeyD') keys.d = true;
-    if (event.code === 'Space') keys.space = true;
+const keys = { w: false, a: false, s: false, d: false, space: false };
+
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyW') keys.w = true;
+    if (e.code === 'KeyA') keys.a = true;
+    if (e.code === 'KeyS') keys.s = true;
+    if (e.code === 'KeyD') keys.d = true;
+    if (e.code === 'Space') keys.space = true;
 });
 
-// When a key is released, mark it as false
-window.addEventListener('keyup', (event) => {
-    if (event.code === 'KeyW') keys.w = false;
-    if (event.code === 'KeyA') keys.a = false;
-    if (event.code === 'KeyS') keys.s = false;
-    if (event.code === 'KeyD') keys.d = false;
-    if (event.code === 'Space') keys.space = false;
+window.addEventListener('keyup', (e) => {
+    if (e.code === 'KeyW') keys.w = false;
+    if (e.code === 'KeyA') keys.a = false;
+    if (e.code === 'KeyS') keys.s = false;
+    if (e.code === 'KeyD') keys.d = false;
+    if (e.code === 'Space') keys.space = false;
 });
 
-// Step 10: Mouse look (camera rotation) - FIXED for flicker prevention
-// Lock the pointer when user clicks on the canvas
+// ================================================================
+// POINTER LOCK (captures mouse for FPS-style control)
+// ================================================================
+
+let pointerLocked = false;
+let skipNextMove = false;    // skip first mouse event after lock (prevents flicker)
+
 renderer.domElement.addEventListener('click', () => {
     renderer.domElement.requestPointerLock();
-    ignoreNextMouseMove = true; // Ignore the first movement after lock
+    skipNextMove = true;
 });
 
-// Handle pointer lock state changes
 document.addEventListener('pointerlockchange', () => {
-    isPointerLocked = document.pointerLockElement === renderer.domElement;
-    if (!isPointerLocked) {
-        ignoreNextMouseMove = false; // Reset when lock is lost
-    }
+    pointerLocked = (document.pointerLockElement === renderer.domElement);
+    if (!pointerLocked) skipNextMove = false;
 });
 
-// Handle pointer lock errors (some browsers)
 document.addEventListener('pointerlockerror', () => {
-    isPointerLocked = false;
-    ignoreNextMouseMove = false;
+    pointerLocked = false;
+    skipNextMove = false;
 });
 
-// Track mouse movement when pointer is locked
+// ================================================================
+// MOUSE HANDLER — updates theta (horizontal) and phi (vertical)
+// ================================================================
+// This is where the camera orbit angles are updated based on mouse movement.
+//
+// MATH EXPLANATION:
+//   event.movementX > 0 means mouse moved RIGHT
+//   We want: mouse right → character turns right → clockwise from above → theta DECREASES
+//   So: theta -= deltaX * sensitivity
+//
+//   event.movementY > 0 means mouse moved DOWN
+//   We want: mouse down → camera lowers (phi decreases)
+//   So: phi -= deltaY * sensitivity
+
 document.addEventListener('mousemove', (event) => {
-    // Only process if pointer is actually locked
-    if (!isPointerLocked || document.pointerLockElement !== renderer.domElement) {
+    // Only process when pointer is locked
+    if (!pointerLocked) return;
+
+    // Skip first event after pointer lock (prevents flicker)
+    if (skipNextMove) {
+        skipNextMove = false;
         return;
     }
-    
-    // Ignore the first movement after lock (prevents initial jump)
-    if (ignoreNextMouseMove) {
-        ignoreNextMouseMove = false;
-        return;
-    }
-    
-    // Get movement values
-    const deltaX = event.movementX || 0;
-    const deltaY = event.movementY || 0;
-    
-    // Filter out suspiciously large movements (prevents flicker from browser bugs)
-    // Normal mouse movement is rarely more than 100 pixels per frame
-    const maxMovement = 100;
-    if (Math.abs(deltaX) > maxMovement || Math.abs(deltaY) > maxMovement) {
-        return; // Ignore this movement (likely a bug)
-    }
-    
-    // Update rotation angles based on mouse movement
-    cameraRotationY -= deltaX * mouseSensitivity; // Horizontal (left/right)
-    cameraRotationX -= deltaY * mouseSensitivity; // Vertical (up/down)
-    
-    // Limit vertical rotation so you can't flip upside down
-    cameraRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotationX));
+
+    const dx = event.movementX || 0;
+    const dy = event.movementY || 0;
+
+    // Filter out abnormally large movements (browser bug protection)
+    if (Math.abs(dx) > 100 || Math.abs(dy) > 100) return;
+
+    // Update orbit angles
+    theta -= dx * sensitivity;   // mouse right → theta decreases → turn right
+    phi   += dy * sensitivity;   // mouse down  → phi decreases  → camera lowers
+
+    // Clamp phi to prevent going underground or flipping overhead
+    phi = Math.max(PHI_MIN, Math.min(PHI_MAX, phi));
 });
 
-// Step 11: Animation loop (runs 60 times per second)
+// ================================================================
+// ANIMATION LOOP
+// ================================================================
+let frame = 0;
+
 function animate() {
     requestAnimationFrame(animate);
-    
-    // Rotate the cube slightly each frame (optional - helps see it's 3D)
+    frame++;
+
+    // Spin the reference cube slowly
     cube.rotation.y += 0.01;
-    
-    // Apply camera rotation first (mouse look)
-    // We use Euler angles to set the camera's rotation
-    camera.rotation.order = 'YXZ'; // Important: rotate Y first, then X
-    camera.rotation.y = cameraRotationY; // Horizontal rotation
-    camera.rotation.x = cameraRotationX; // Vertical rotation
-    
-    // Handle camera movement based on keyboard input
-    // IMPORTANT: Use camera's actual forward direction (not manual calculation)
-    // This ensures movement always matches where you're looking
-    
-    // Get camera's forward direction vector (where it's actually looking)
-    const forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
-    
-    // We only want horizontal movement (XZ plane), so remove vertical component
-    forward.y = 0;
-    forward.normalize(); // Make it length 1, then multiply by speed
-    
-    // Get right direction (perpendicular to forward, on the ground)
-    const right = new THREE.Vector3();
-    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)); // Cross product with up vector
-    right.normalize();
-    
-    // Apply movement based on keys pressed
-    if (keys.w) {
-        // Move forward (in the direction camera is facing)
-        camera.position.add(forward.clone().multiplyScalar(moveSpeed));
+
+    // ============================================================
+    // 1) CHARACTER MOVEMENT (WASD, relative to character facing)
+    // ============================================================
+    // Character faces direction: (-sin(theta), 0, -cos(theta))
+    // This is the local -Z axis rotated by theta around Y.
+    //
+    // Right direction (perpendicular): (cos(theta), 0, -sin(theta))
+    // This is cross(forward, up).
+
+    const fwdX = -Math.sin(theta) * moveSpeed;
+    const fwdZ = -Math.cos(theta) * moveSpeed;
+    const rgtX =  Math.cos(theta) * moveSpeed;
+    const rgtZ = -Math.sin(theta) * moveSpeed;
+
+    if (keys.w) { charPos.x += fwdX; charPos.z += fwdZ; }  // forward
+    if (keys.s) { charPos.x -= fwdX; charPos.z -= fwdZ; }  // backward
+    if (keys.a) { charPos.x -= rgtX; charPos.z -= rgtZ; }  // strafe left
+    if (keys.d) { charPos.x += rgtX; charPos.z += rgtZ; }  // strafe right
+
+    // ============================================================
+    // 2) JUMPING & GRAVITY
+    // ============================================================
+    if (keys.space && onGround) {
+        vertVelocity = jumpSpeed;
+        onGround = false;
     }
-    if (keys.s) {
-        // Move backward (opposite of forward)
-        camera.position.add(forward.clone().multiplyScalar(-moveSpeed));
+
+    vertVelocity -= gravity;
+    charPos.y += vertVelocity;
+
+    if (charPos.y <= groundY) {
+        charPos.y = groundY;
+        vertVelocity = 0;
+        onGround = true;
     }
-    if (keys.a) {
-        // Strafe left (opposite of right)
-        camera.position.add(right.clone().multiplyScalar(-moveSpeed));
+
+    // ============================================================
+    // 3) UPDATE CHARACTER MODEL
+    // ============================================================
+    // Position the character group at charPos
+    character.position.copy(charPos);
+
+    // Character faces away from camera.
+    // When theta = 0, camera is at +Z, character faces -Z.
+    // character.rotation.y = 0 → faces -Z in Three.js. ✓
+    // So: character.rotation.y = theta (directly!)
+    character.rotation.y = theta;
+
+    // ============================================================
+    // 4) CAMERA POSITIONING (spherical orbit around character)
+    // ============================================================
+    // Camera orbits the character using spherical coordinates:
+    //   x = dist * cos(phi) * sin(theta)    ← horizontal offset
+    //   y = dist * sin(phi)                 ← vertical offset (height)
+    //   z = dist * cos(phi) * cos(theta)    ← horizontal offset
+    //
+    // Camera is placed at charPos + offset, then looks at character.
+
+    camera.position.x = charPos.x + camDist * Math.cos(phi) * Math.sin(theta);
+    camera.position.y = charPos.y + camDist * Math.sin(phi);
+    camera.position.z = charPos.z + camDist * Math.cos(phi) * Math.cos(theta);
+
+    // Camera always looks at the character (slightly above center for better view)
+    camera.lookAt(charPos.x, charPos.y + 0.5, charPos.z);
+
+    // ============================================================
+    // 5) DEBUG LOG (once per second)
+    // ============================================================
+    if (frame % 60 === 0) {
+        const deg = (r) => (r * 180 / Math.PI).toFixed(1);
+        console.log(
+            `theta=${deg(theta)}° phi=${deg(phi)}°`,
+            `| char facing=${deg(character.rotation.y)}°`,
+            `| charPos=(${charPos.x.toFixed(1)}, ${charPos.y.toFixed(1)}, ${charPos.z.toFixed(1)})`,
+            `| camPos=(${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)})`
+        );
     }
-    if (keys.d) {
-        // Strafe right
-        camera.position.add(right.clone().multiplyScalar(moveSpeed));
-    }
-    
-    // Handle jumping and gravity
-    // Check if Space key is pressed and player is on ground
-    if (keys.space && isOnGround) {
-        verticalVelocity = jumpSpeed; // Start jumping upward
-        isOnGround = false; // No longer on ground
-    }
-    
-    // Apply gravity (always pulling down)
-    verticalVelocity -= gravity;
-    
-    // Update camera Y position based on velocity
-    camera.position.y += verticalVelocity;
-    
-    // Check if player hit the ground
-    if (camera.position.y <= groundLevel) {
-        camera.position.y = groundLevel; // Snap to ground level
-        verticalVelocity = 0; // Stop falling
-        isOnGround = true; // Back on ground
-    }
-    
-    // Draw the scene from the camera's perspective
+
+    // ============================================================
+    // 6) RENDER
+    // ============================================================
     renderer.render(scene, camera);
 }
 
-// Start the animation loop
+// Start!
 animate();
