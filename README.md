@@ -10,6 +10,8 @@ A simple 3D browser-based game built with JavaScript and Three.js, featuring smo
 - ✅ First-person and third-person camera modes (toggle with V key)
 - ✅ Jump mechanics with gravity
 - ✅ Character animations (walking, jumping, idle)
+- ✅ UI/HUD system (crosshair, health bar, ammo counter, score, FPS)
+- ✅ Toggleable UI (press H to hide/show)
 - ✅ Grid visualization for better spatial awareness
 - ✅ Optimized for performance (60+ FPS)
 
@@ -55,6 +57,7 @@ npm run dev
 - **D** - Strafe right
 - **Space** - Jump
 - **V** - Toggle camera mode (first-person ↔ third-person)
+- **H** - Toggle UI/HUD visibility
 - **Mouse** - Look around
 - **ESC** - Unlock mouse pointer
 

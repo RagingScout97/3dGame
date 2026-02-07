@@ -141,6 +141,16 @@ let vertVelocity = 0;
 let onGround = true;
 
 // ================================================================
+// GAME STATE (for UI/HUD)
+// ================================================================
+let playerHealth = 100;      // Player health (0-100)
+let playerMaxHealth = 100;   // Maximum health
+let ammoCurrent = 30;        // Current ammo in magazine
+let ammoTotal = 90;          // Total ammo (reserve)
+let score = 0;               // Player score
+let uiVisible = true;        // UI visibility toggle
+
+// ================================================================
 // CAMERA MODE & ORBIT VARIABLES
 // ================================================================
 // Camera can be in two modes:
@@ -181,7 +191,7 @@ const PHI_MAX_PITCH = 1.4;  // ~80° up (can't look straight up)
 // INPUT TRACKING
 // ================================================================
 
-const keys = { w: false, a: false, s: false, d: false, space: false, v: false };
+const keys = { w: false, a: false, s: false, d: false, space: false, v: false, h: false };
 
 window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyW') keys.w = true;
@@ -206,6 +216,22 @@ window.addEventListener('keydown', (e) => {
             console.log(`Camera mode: ${cameraMode}`);
         }
     }
+    if (e.code === 'KeyH') {
+        // Toggle UI visibility (only on keydown, not keyup, to prevent rapid toggling)
+        if (!keys.h) {  // Only toggle once per key press
+            keys.h = true;
+            uiVisible = !uiVisible;
+            const hudElement = document.getElementById('hud');
+            if (hudElement) {
+                if (uiVisible) {
+                    hudElement.classList.remove('hidden');
+                } else {
+                    hudElement.classList.add('hidden');
+                }
+            }
+            console.log(`UI ${uiVisible ? 'visible' : 'hidden'}`);
+        }
+    }
 });
 
 window.addEventListener('keyup', (e) => {
@@ -215,6 +241,7 @@ window.addEventListener('keyup', (e) => {
     if (e.code === 'KeyD') keys.d = false;
     if (e.code === 'Space') keys.space = false;
     if (e.code === 'KeyV') keys.v = false;
+    if (e.code === 'KeyH') keys.h = false;
 });
 
 // ================================================================
@@ -287,6 +314,10 @@ document.addEventListener('mousemove', (event) => {
 // ANIMATION LOOP
 // ================================================================
 let frame = 0;
+let lastFpsUpdate = 0;
+let fps = 60;
+let fpsFrameCount = 0;
+let fpsLastTime = performance.now();
 
 function animate() {
     requestAnimationFrame(animate);
@@ -477,7 +508,64 @@ function animate() {
     }
 
     // ============================================================
-    // 5) DEBUG LOG (once per second)
+    // 5) UPDATE UI/HUD ELEMENTS
+    // ============================================================
+    // Update UI elements every frame (smooth updates)
+    
+    // Health bar
+    const healthBarFill = document.getElementById('health-bar-fill');
+    if (healthBarFill) {
+        const healthPercent = (playerHealth / playerMaxHealth) * 100;
+        healthBarFill.style.width = `${Math.max(0, Math.min(100, healthPercent))}%`;
+        
+        // Change color based on health level
+        if (healthPercent > 60) {
+            healthBarFill.style.background = 'linear-gradient(90deg, #00ff00, #44ff44)'; // Green
+        } else if (healthPercent > 30) {
+            healthBarFill.style.background = 'linear-gradient(90deg, #ffff00, #ffff44)'; // Yellow
+        } else {
+            healthBarFill.style.background = 'linear-gradient(90deg, #ff0000, #ff4444)'; // Red
+        }
+    }
+    
+    // Ammo counter
+    const ammoCurrentEl = document.getElementById('ammo-current');
+    const ammoTotalEl = document.getElementById('ammo-total');
+    if (ammoCurrentEl) ammoCurrentEl.textContent = ammoCurrent;
+    if (ammoTotalEl) ammoTotalEl.textContent = `/ ${ammoTotal}`;
+    
+    // Score
+    const scoreValueEl = document.getElementById('score-value');
+    if (scoreValueEl) scoreValueEl.textContent = score.toLocaleString();
+    
+    // FPS counter (calculate accurate FPS)
+    fpsFrameCount++;
+    const currentTime = performance.now();
+    const deltaTime = currentTime - fpsLastTime;
+    
+    // Update FPS every second
+    if (deltaTime >= 1000) {
+        fps = Math.round((fpsFrameCount * 1000) / deltaTime);
+        fpsFrameCount = 0;
+        fpsLastTime = currentTime;
+        
+        const fpsValueEl = document.getElementById('fps-value');
+        if (fpsValueEl) {
+            fpsValueEl.textContent = fps;
+            
+            // Change color based on FPS
+            if (fps >= 55) {
+                fpsValueEl.style.color = '#0f0'; // Green (good)
+            } else if (fps >= 30) {
+                fpsValueEl.style.color = '#ff0'; // Yellow (okay)
+            } else {
+                fpsValueEl.style.color = '#f00'; // Red (poor)
+            }
+        }
+    }
+
+    // ============================================================
+    // 6) DEBUG LOG (once per second)
     // ============================================================
     if (frame % 60 === 0) {
         const deg = (r) => (r * 180 / Math.PI).toFixed(1);
@@ -490,7 +578,7 @@ function animate() {
     }
 
     // ============================================================
-    // 6) RENDER
+    // 7) RENDER
     // ============================================================
     renderer.render(scene, camera);
 }
