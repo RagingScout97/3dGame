@@ -45,12 +45,203 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
 directionalLight.position.set(5, 10, 5);
 scene.add(directionalLight);
 
-// Reference cube (so we have something to walk around)
-const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-const cubeMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-const cube = new THREE.Mesh(cubeGeo, cubeMat);
-cube.position.set(0, 0.5, 0);
-scene.add(cube);
+// ================================================================
+// ENVIRONMENT CREATION SYSTEM
+// ================================================================
+// Modular system for creating interactive environment elements
+// Designed to be extensible for future game engine
+
+// Materials for environment elements
+const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+const platformMaterial = new THREE.MeshStandardMaterial({ color: 0x4a9eff });
+const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+
+// Environment object storage
+const environment = {
+    walls: [],
+    platforms: [],
+    obstacles: [],
+    allObjects: [] // Combined for collision detection
+};
+
+// Collision objects storage (for efficient collision checking)
+const collisionObjects = [];
+
+/**
+ * Create a wall at specified position and size
+ * @param {THREE.Vector3} position - Center position of wall
+ * @param {THREE.Vector3} size - Size of wall (width, height, depth)
+ * @param {number} rotationY - Rotation around Y axis (in radians)
+ * @returns {THREE.Mesh} The created wall mesh
+ */
+function createWall(position, size, rotationY = 0) {
+    const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+    const wall = new THREE.Mesh(geometry, wallMaterial);
+    wall.position.copy(position);
+    wall.rotation.y = rotationY;
+    scene.add(wall);
+    
+    // Store for collision detection
+    const collisionData = {
+        type: 'wall',
+        mesh: wall,
+        min: new THREE.Vector3(
+            position.x - size.x / 2,
+            position.y - size.y / 2,
+            position.z - size.z / 2
+        ),
+        max: new THREE.Vector3(
+            position.x + size.x / 2,
+            position.y + size.y / 2,
+            position.z + size.z / 2
+        )
+    };
+    
+    environment.walls.push(wall);
+    environment.allObjects.push(wall);
+    collisionObjects.push(collisionData);
+    
+    return wall;
+}
+
+/**
+ * Create a platform at specified position and size
+ * @param {THREE.Vector3} position - Center position of platform
+ * @param {THREE.Vector3} size - Size of platform (width, height, depth)
+ * @returns {THREE.Mesh} The created platform mesh
+ */
+function createPlatform(position, size) {
+    const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+    const platform = new THREE.Mesh(geometry, platformMaterial);
+    platform.position.copy(position);
+    scene.add(platform);
+    
+    // Store for collision detection
+    const collisionData = {
+        type: 'platform',
+        mesh: platform,
+        min: new THREE.Vector3(
+            position.x - size.x / 2,
+            position.y - size.y / 2,
+            position.z - size.z / 2
+        ),
+        max: new THREE.Vector3(
+            position.x + size.x / 2,
+            position.y + size.y / 2,
+            position.z + size.z / 2
+        )
+    };
+    
+    environment.platforms.push(platform);
+    environment.allObjects.push(platform);
+    collisionObjects.push(collisionData);
+    
+    return platform;
+}
+
+/**
+ * Create ground plane
+ * @param {number} size - Size of ground plane
+ * @returns {THREE.Mesh} The created ground mesh
+ */
+function createGround(size = 50) {
+    const geometry = new THREE.PlaneGeometry(size, size);
+    const ground = new THREE.Mesh(geometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    
+    // Ground collision (infinite plane at y=0)
+    const collisionData = {
+        type: 'ground',
+        mesh: ground,
+        min: new THREE.Vector3(-Infinity, -0.1, -Infinity),
+        max: new THREE.Vector3(Infinity, 0.1, Infinity)
+    };
+    
+    collisionObjects.push(collisionData);
+    
+    return ground;
+}
+
+/**
+ * Create default playable environment
+ */
+function createDefaultEnvironment() {
+    // Create ground
+    createGround(50);
+    
+    // Arena boundary walls (20x20 area)
+    const arenaSize = 20;
+    const wallHeight = 5;
+    const wallThickness = 0.5;
+    
+    // North wall (positive Z)
+    createWall(
+        new THREE.Vector3(0, wallHeight / 2, arenaSize / 2),
+        new THREE.Vector3(arenaSize, wallHeight, wallThickness),
+        0
+    );
+    
+    // South wall (negative Z)
+    createWall(
+        new THREE.Vector3(0, wallHeight / 2, -arenaSize / 2),
+        new THREE.Vector3(arenaSize, wallHeight, wallThickness),
+        0
+    );
+    
+    // East wall (positive X)
+    createWall(
+        new THREE.Vector3(arenaSize / 2, wallHeight / 2, 0),
+        new THREE.Vector3(wallThickness, wallHeight, arenaSize),
+        0
+    );
+    
+    // West wall (negative X)
+    createWall(
+        new THREE.Vector3(-arenaSize / 2, wallHeight / 2, 0),
+        new THREE.Vector3(wallThickness, wallHeight, arenaSize),
+        0
+    );
+    
+    // Platforms at different heights
+    // Lower platform (easy to jump on - at y=1.8, only 0.3 units above ground)
+    createPlatform(
+        new THREE.Vector3(0, 1.8, 0),
+        new THREE.Vector3(4, 0.2, 4)
+    );
+    
+    // Medium height platforms
+    createPlatform(
+        new THREE.Vector3(5, 2.5, 5),
+        new THREE.Vector3(3, 0.2, 3)
+    );
+    
+    createPlatform(
+        new THREE.Vector3(-5, 3, 5),
+        new THREE.Vector3(3, 0.2, 3)
+    );
+    
+    createPlatform(
+        new THREE.Vector3(5, 3.5, -5),
+        new THREE.Vector3(3, 0.2, 3)
+    );
+    
+    createPlatform(
+        new THREE.Vector3(-5, 4, -5),
+        new THREE.Vector3(4, 0.2, 4)
+    );
+    
+    // Higher platform
+    createPlatform(
+        new THREE.Vector3(0, 5, 0),
+        new THREE.Vector3(2, 0.2, 2)
+    );
+}
+
+// Create the default environment
+createDefaultEnvironment();
 
 // ================================================================
 // BLOCK CHARACTER MODEL (Minecraft-style)
@@ -128,17 +319,242 @@ const jumpLegTuck = 0.8;     // How much legs tuck when jumping (radians)
 // ================================================================
 
 // Character position in the world
-const charPos = new THREE.Vector3(0, 1.5, 0);
+const charPos = new THREE.Vector3(-3, 1.5, -3); // Spawn away from center platform
+const spawnPosition = new THREE.Vector3(-3, 1.5, -3); // Respawn position (away from platforms)
 
 // Movement
 const moveSpeed = 0.1;
 
 // Jump & gravity
-const jumpSpeed = 0.15;
+const jumpSpeed = 0.2;      // Increased jump height for better platform access
 const gravity = 0.01;
 const groundY = 1.5;        // character Y when standing on ground
 let vertVelocity = 0;
 let onGround = true;
+
+// ================================================================
+// COLLISION DETECTION SYSTEM
+// ================================================================
+// AABB (Axis-Aligned Bounding Box) collision detection
+
+// Character collision bounds
+const charSize = {
+    width: 0.4,   // X axis
+    height: 1.5,  // Y axis
+    depth: 0.4    // Z axis
+};
+
+/**
+ * Check if character would collide at new position
+ * @param {THREE.Vector3} newPos - Proposed new position
+ * @returns {Object} {collided: boolean, axis: 'x'|'z'|'y'|null, object: Object|null}
+ */
+function checkCollision(newPos) {
+    // Character bounding box at new position
+    const charMin = new THREE.Vector3(
+        newPos.x - charSize.width / 2,
+        newPos.y - charSize.height / 2,
+        newPos.z - charSize.depth / 2
+    );
+    const charMax = new THREE.Vector3(
+        newPos.x + charSize.width / 2,
+        newPos.y + charSize.height / 2,
+        newPos.z + charSize.depth / 2
+    );
+    
+    for (const obj of collisionObjects) {
+        // Skip ground (handled separately)
+        if (obj.type === 'ground') continue;
+        
+        // For platforms, check if player is at platform level (can collide horizontally)
+        if (obj.type === 'platform') {
+            const charBottom = newPos.y - charSize.height / 2;
+            const charTop = newPos.y + charSize.height / 2;
+            const platformTop = obj.max.y;
+            const platformBottom = obj.min.y;
+            
+            // Platform collision logic:
+            // - If standing ON platform (bottom at platform top), allow movement (skip collision)
+            // - If above platform, check horizontal collision (might hit edge)
+            // - If below platform, can walk under (skip collision)
+            // - If intersecting platform vertically (inside it), block horizontal movement
+            
+            // Standing on top of platform - allow free movement
+            if (charBottom >= platformTop - 0.05 && charBottom <= platformTop + 0.05) {
+                continue; // Skip collision - can move freely on top
+            }
+            
+            // Below platform - can walk under
+            if (charTop <= platformBottom) {
+                continue; // Skip collision - can walk under
+            }
+            
+            // Above platform - might hit edge, check horizontal collision
+            if (charBottom > platformTop) {
+                // Continue to collision check - might hit platform edge from above
+            } else {
+                // Intersecting platform vertically (inside it) - block horizontal movement
+                // Continue to collision check below
+            }
+        }
+        
+        // AABB collision check
+        if (charMin.x < obj.max.x && charMax.x > obj.min.x &&
+            charMin.y < obj.max.y && charMax.y > obj.min.y &&
+            charMin.z < obj.max.z && charMax.z > obj.min.z) {
+            
+            // Determine primary collision axis (which axis has smallest overlap)
+            const overlapX = Math.min(charMax.x - obj.min.x, obj.max.x - charMin.x);
+            const overlapZ = Math.min(charMax.z - obj.min.z, obj.max.z - charMin.z);
+            
+            // Return the axis with smaller overlap (primary collision direction)
+            if (overlapX < overlapZ) {
+                return { collided: true, axis: 'x', object: obj };
+            } else {
+                return { collided: true, axis: 'z', object: obj };
+            }
+        }
+    }
+    
+    return { collided: false, axis: null, object: null };
+}
+
+/**
+ * Check platform collision (blocks downward movement when falling, upward movement when rising)
+ * Optimized platform collision detection with smooth landing - prevents "thump" feeling
+ * @param {THREE.Vector3} newPos - Proposed new position
+ * @param {number} currentY - Current Y position (before movement)
+ * @param {number} velocityY - Current vertical velocity (negative = falling, positive = rising)
+ * @returns {Object} {onPlatform: boolean, platformY: number|null, hitCeiling: boolean, ceilingY: number|null}
+ */
+function checkPlatformCollision(newPos, currentY, velocityY) {
+    // Early exit optimization: skip if moving up too fast (won't land) or down too slow (already past)
+    if (velocityY > 0.1 || velocityY < -0.3) {
+        // Only check ceiling if moving up fast, only check landing if falling fast enough
+        if (velocityY > 0.1) {
+            // Check ceiling only
+            const charTop = newPos.y + charSize.height / 2;
+            const charMinX = newPos.x - charSize.width / 2;
+            const charMaxX = newPos.x + charSize.width / 2;
+            const charMinZ = newPos.z - charSize.depth / 2;
+            const charMaxZ = newPos.z + charSize.depth / 2;
+            
+            let lowestCeiling = null;
+            let lowestCeilingY = Infinity;
+            
+            for (const obj of collisionObjects) {
+                if (obj.type === 'platform') {
+                    if (charMinX < obj.max.x && charMaxX > obj.min.x &&
+                        charMinZ < obj.max.z && charMaxZ > obj.min.z) {
+                        const platformBottom = obj.min.y;
+                        const previousCharTop = currentY + charSize.height / 2;
+                        const wasBelowPlatform = previousCharTop <= platformBottom + 0.1;
+                        const isHittingCeiling = charTop >= platformBottom - 0.05 && 
+                                                charTop < platformBottom + 0.1 && 
+                                                wasBelowPlatform;
+                        
+                        if (isHittingCeiling && platformBottom < lowestCeilingY) {
+                            lowestCeiling = obj;
+                            lowestCeilingY = platformBottom;
+                        }
+                    }
+                }
+            }
+            
+            if (lowestCeiling) {
+                return { onPlatform: false, platformY: null, hitCeiling: true, ceilingY: lowestCeilingY };
+            }
+            return { onPlatform: false, platformY: null, hitCeiling: false, ceilingY: null };
+        }
+        return { onPlatform: false, platformY: null, hitCeiling: false, ceilingY: null };
+    }
+    
+    const charBottom = newPos.y - charSize.height / 2;
+    const charTop = newPos.y + charSize.height / 2;
+    const charMinX = newPos.x - charSize.width / 2;
+    const charMaxX = newPos.x + charSize.width / 2;
+    const charMinZ = newPos.z - charSize.depth / 2;
+    const charMaxZ = newPos.z + charSize.depth / 2;
+    
+    let highestPlatform = null;
+    let highestPlatformY = -Infinity;
+    let lowestCeiling = null;
+    let lowestCeilingY = Infinity;
+    
+    // Optimized: only check platforms that are potentially in range
+    for (const obj of collisionObjects) {
+        if (obj.type === 'platform') {
+            // Quick AABB rejection test (optimization)
+            if (charMaxX < obj.min.x || charMinX > obj.max.x ||
+                charMaxZ < obj.min.z || charMinZ > obj.max.z) {
+                continue; // No horizontal overlap, skip
+            }
+            
+            const platformTop = obj.max.y;
+            const platformBottom = obj.min.y;
+            const previousCharBottom = currentY - charSize.height / 2;
+            const previousCharTop = currentY + charSize.height / 2;
+            
+            // Check landing collision (falling downward) - precise tolerance for smooth landing
+            if (velocityY <= 0) {
+                // Check if character bottom would pass through or is passing through platform top
+                // We need to check a wider range to catch fast falls from higher platforms
+                if (charBottom <= platformTop + 0.15 && charBottom >= platformTop - 0.3) {
+                    // Verify we were above platform before this frame (important for jumping between platforms)
+                    // More lenient check for jumping from higher to lower platforms
+                    const wasAbovePlatform = previousCharBottom >= platformTop - 0.1;
+                    
+                    // Landing detection: character bottom is at or passing through platform top
+                    // CRITICAL: We want to catch when charBottom is at platformTop or just went through
+                    // For fast falls, charBottom might already be slightly below platformTop, so we need to catch it
+                    const isPassingThrough = charBottom <= platformTop + 0.1 && charBottom >= platformTop - 0.15;
+                    const isLandingOnPlatform = isPassingThrough && 
+                                               charBottom > platformBottom && 
+                                               wasAbovePlatform;
+                    
+                    if (isLandingOnPlatform && platformTop > highestPlatformY) {
+                        highestPlatform = obj;
+                        highestPlatformY = platformTop;
+                    }
+                }
+            }
+            
+            // Check ceiling collision (moving upward) - tighter tolerance
+            if (velocityY > 0) {
+                if (charTop >= platformBottom - 0.15 && charTop <= platformBottom + 0.3) {
+                    const wasBelowPlatform = previousCharTop <= platformBottom + 0.05;
+                    const isHittingCeiling = charTop >= platformBottom - 0.05 && 
+                                            charTop < platformBottom + 0.05 && 
+                                            wasBelowPlatform;
+                    
+                    if (isHittingCeiling && platformBottom < lowestCeilingY) {
+                        lowestCeiling = obj;
+                        lowestCeilingY = platformBottom;
+                    }
+                }
+            }
+        }
+    }
+    
+    const result = { 
+        onPlatform: false, 
+        platformY: null,
+        hitCeiling: false,
+        ceilingY: null
+    };
+    
+    if (highestPlatform) {
+        result.onPlatform = true;
+        result.platformY = highestPlatformY;
+    }
+    
+    if (lowestCeiling) {
+        result.hitCeiling = true;
+        result.ceilingY = lowestCeilingY;
+    }
+    
+    return result;
+}
 
 // ================================================================
 // GAME STATE (for UI/HUD)
@@ -149,6 +565,14 @@ let ammoCurrent = 30;        // Current ammo in magazine
 let ammoTotal = 90;          // Total ammo (reserve)
 let score = 0;               // Player score
 let uiVisible = true;        // UI visibility toggle
+
+// ================================================================
+// DEATH AND RESPAWN SYSTEM
+// ================================================================
+let isDead = false;
+let deathTimer = 0;
+const respawnDelay = 2;      // seconds
+const deathThreshold = -10; // Y level below which player dies
 
 // ================================================================
 // CAMERA MODE & ORBIT VARIABLES
@@ -323,9 +747,6 @@ function animate() {
     requestAnimationFrame(animate);
     frame++;
 
-    // Spin the reference cube slowly
-    cube.rotation.y += 0.01;
-
     // ============================================================
     // 1) CHARACTER MOVEMENT (WASD, relative to character facing)
     // ============================================================
@@ -335,33 +756,190 @@ function animate() {
     // Right direction (perpendicular): (cos(theta), 0, -sin(theta))
     // This is cross(forward, up).
 
-    const fwdX = -Math.sin(theta) * moveSpeed;
-    const fwdZ = -Math.cos(theta) * moveSpeed;
-    const rgtX =  Math.cos(theta) * moveSpeed;
-    const rgtZ = -Math.sin(theta) * moveSpeed;
+    // Only allow movement if not dead
+    if (!isDead) {
+        const fwdX = -Math.sin(theta) * moveSpeed;
+        const fwdZ = -Math.cos(theta) * moveSpeed;
+        const rgtX =  Math.cos(theta) * moveSpeed;
+        const rgtZ = -Math.sin(theta) * moveSpeed;
 
-    if (keys.w) { charPos.x += fwdX; charPos.z += fwdZ; }  // forward
-    if (keys.s) { charPos.x -= fwdX; charPos.z -= fwdZ; }  // backward
-    if (keys.a) { charPos.x -= rgtX; charPos.z -= rgtZ; }  // strafe left
-    if (keys.d) { charPos.x += rgtX; charPos.z += rgtZ; }  // strafe right
+        // Try to move forward
+        if (keys.w) {
+            const newPos = new THREE.Vector3(charPos.x + fwdX, charPos.y, charPos.z + fwdZ);
+            const collision = checkCollision(newPos);
+            if (!collision.collided || collision.axis !== 'x') {
+                charPos.x += fwdX;
+            }
+            if (!collision.collided || collision.axis !== 'z') {
+                charPos.z += fwdZ;
+            }
+        }
+        
+        // Try to move backward
+        if (keys.s) {
+            const newPos = new THREE.Vector3(charPos.x - fwdX, charPos.y, charPos.z - fwdZ);
+            const collision = checkCollision(newPos);
+            if (!collision.collided || collision.axis !== 'x') {
+                charPos.x -= fwdX;
+            }
+            if (!collision.collided || collision.axis !== 'z') {
+                charPos.z -= fwdZ;
+            }
+        }
+        
+        // Try to strafe left
+        if (keys.a) {
+            const newPos = new THREE.Vector3(charPos.x - rgtX, charPos.y, charPos.z - rgtZ);
+            const collision = checkCollision(newPos);
+            if (!collision.collided || collision.axis !== 'x') {
+                charPos.x -= rgtX;
+            }
+            if (!collision.collided || collision.axis !== 'z') {
+                charPos.z -= rgtZ;
+            }
+        }
+        
+        // Try to strafe right
+        if (keys.d) {
+            const newPos = new THREE.Vector3(charPos.x + rgtX, charPos.y, charPos.z + rgtZ);
+            const collision = checkCollision(newPos);
+            if (!collision.collided || collision.axis !== 'x') {
+                charPos.x += rgtX;
+            }
+            if (!collision.collided || collision.axis !== 'z') {
+                charPos.z += rgtZ;
+            }
+        }
+    }
 
     // ============================================================
     // 2) JUMPING & GRAVITY
     // ============================================================
-    if (keys.space && onGround) {
-        vertVelocity = jumpSpeed;
-        onGround = false;
+    if (!isDead) {
+        if (keys.space && onGround) {
+            vertVelocity = jumpSpeed;
+            onGround = false;
+        }
+
+        vertVelocity -= gravity;
+        const newY = charPos.y + vertVelocity;
+        
+        // Check platform collision (landing when falling, ceiling when rising)
+        const platformCollision = checkPlatformCollision(
+            new THREE.Vector3(charPos.x, newY, charPos.z),
+            charPos.y,
+            vertVelocity
+        );
+        
+        if (platformCollision.onPlatform && vertVelocity <= 0) {
+            // Land on platform (falling downward) - smooth landing
+            // Position character so bottom is exactly at platform top (not inside)
+            // platformY is the platform top (obj.max.y)
+            // Character bottom = charPos.y - charSize.height / 2
+            // We want: charPos.y - charSize.height / 2 = platformTop
+            // So: charPos.y = platformTop + charSize.height / 2
+            const platformTop = platformCollision.platformY;
+            const targetY = platformTop + charSize.height / 2;
+            
+            // CRITICAL: Always ensure character bottom is exactly at platform top (never inside)
+            // Calculate what the character bottom would be at targetY
+            const resultingCharBottom = targetY - charSize.height / 2;
+            
+            // If we're already past the platform (inside it), we need to snap to correct position
+            // Check if current position would put us inside
+            const currentCharBottom = newY - charSize.height / 2;
+            
+            // If we're inside or about to land, snap to correct position
+            if (currentCharBottom <= platformTop + 0.2) {
+                // Ensure final position puts character bottom exactly at platform top
+                // Add small offset to ensure we're on top, not inside
+                const finalY = platformTop + charSize.height / 2 + 0.001; // Tiny offset to ensure on top
+                charPos.y = finalY;
+                vertVelocity = 0;
+                onGround = true;
+            } else {
+                // Still falling, continue movement
+                charPos.y = newY;
+                onGround = false;
+            }
+        } else if (platformCollision.hitCeiling && vertVelocity > 0) {
+            // Hit platform ceiling (moving upward) - smooth collision
+            const targetY = platformCollision.ceilingY - charSize.height / 2;
+            const distanceToCeiling = Math.abs(newY - targetY);
+            
+            if (distanceToCeiling < 0.1) {
+                // Smooth ceiling hit - snap to just below platform
+                charPos.y = targetY;
+                vertVelocity = 0;
+                onGround = false;
+            } else {
+                // Still rising, continue movement
+                charPos.y = newY;
+                onGround = false;
+            }
+        } else if (newY <= groundY) {
+            // Ground collision
+            charPos.y = groundY;
+            vertVelocity = 0;
+            onGround = true;
+        } else {
+            // In air, no collision
+            charPos.y = newY;
+            onGround = false;
+        }
     }
 
-    vertVelocity -= gravity;
-    charPos.y += vertVelocity;
-
-    if (charPos.y <= groundY) {
-        charPos.y = groundY;
-        vertVelocity = 0;
-        onGround = true;
+    // ============================================================
+    // 2.5) DEATH DETECTION & RESPAWN
+    // ============================================================
+    if (!isDead && charPos.y < deathThreshold) {
+        // Player fell below death threshold
+        isDead = true;
+        deathTimer = 0;
+        console.log('YOU DIED!');
+        
+        // Show death overlay
+        const deathOverlay = document.getElementById('death-overlay');
+        if (deathOverlay) {
+            deathOverlay.classList.add('visible');
+        }
     }
-
+    
+    if (isDead) {
+        deathTimer += 0.016; // ~60fps, so ~0.016 seconds per frame
+        
+        // Death animation: character falls and rotates
+        character.rotation.x += 0.05;
+        character.rotation.z += 0.03;
+        vertVelocity = -0.2; // Continue falling
+        
+        // Update respawn countdown UI
+        const respawnCountdown = document.getElementById('respawn-countdown');
+        if (respawnCountdown) {
+            const remaining = Math.ceil(respawnDelay - deathTimer);
+            respawnCountdown.textContent = Math.max(0, remaining);
+        }
+        
+        // Respawn after delay
+        if (deathTimer >= respawnDelay) {
+            // Respawn
+            charPos.copy(spawnPosition);
+            character.position.copy(spawnPosition);
+            character.rotation.set(0, theta, 0); // Reset rotation
+            vertVelocity = 0;
+            onGround = true;
+            isDead = false;
+            deathTimer = 0;
+            console.log('RESPAWNED!');
+            
+            // Hide death overlay
+            const deathOverlay = document.getElementById('death-overlay');
+            if (deathOverlay) {
+                deathOverlay.classList.remove('visible');
+            }
+        }
+    }
+    
     // ============================================================
     // 3) UPDATE CHARACTER MODEL & ANIMATIONS
     // ============================================================
