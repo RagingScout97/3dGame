@@ -157,7 +157,7 @@ let uiVisible = true;        // UI visibility toggle
 //   - Third-person: orbits around character (Roblox-style)
 //   - First-person: camera inside character's head (FPS-style)
 
-let cameraMode = 'third-person';  // 'first-person' or 'third-person'
+let cameraMode = 'first-person';  // 'first-person' or 'third-person' (default: first-person)
 
 // We use two angles to control camera rotation:
 //   theta = horizontal rotation (yaw). Controls left/right looking.
@@ -175,7 +175,7 @@ let cameraMode = 'third-person';  // 'first-person' or 'third-person'
 //   - Mouse down (positive deltaY) → phi changes based on mode
 
 let theta = 0;              // horizontal rotation (yaw) in radians
-let phi = 0.4;              // vertical rotation (pitch/orbit) in radians
+let phi = 0;                // vertical rotation (pitch/orbit) in radians (0 = straight ahead for first-person)
 const camDist = 5;          // distance from character to camera (third-person only)
 const sensitivity = 0.003;  // mouse sensitivity
 
