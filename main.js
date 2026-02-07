@@ -90,6 +90,40 @@ character.add(charArrow);
 scene.add(character);
 
 // ================================================================
+// CHARACTER ANIMATION SYSTEM
+// ================================================================
+// Store references to character parts for animation
+// Store original positions/rotations for reset
+const charParts = {
+    head: head,
+    body: body,
+    leftArm: leftArm,
+    rightArm: rightArm,
+    leftLeg: leftLeg,
+    rightLeg: rightLeg
+};
+
+// Store original positions (for resetting animations)
+const originalPositions = {
+    leftArm: leftArm.position.clone(),
+    rightArm: rightArm.position.clone(),
+    leftLeg: leftLeg.position.clone(),
+    rightLeg: rightLeg.position.clone()
+};
+
+// Animation state
+let animationTime = 0;        // Time counter for animations (increases each frame)
+const walkSpeed = 8;         // How fast walking animation cycles
+const idleBobSpeed = 2;      // How fast idle bobbing animation cycles
+const idleBobAmount = 0.02;   // How much character bobs up/down when idle
+
+// Animation angles (in radians)
+const walkArmSwing = 0.5;    // How far arms swing (radians)
+const walkLegSwing = 0.6;    // How far legs swing (radians)
+const jumpArmLift = 1.2;     // How much arms lift when jumping (radians)
+const jumpLegTuck = 0.8;     // How much legs tuck when jumping (radians)
+
+// ================================================================
 // GAME STATE VARIABLES
 // ================================================================
 
@@ -298,7 +332,7 @@ function animate() {
     }
 
     // ============================================================
-    // 3) UPDATE CHARACTER MODEL
+    // 3) UPDATE CHARACTER MODEL & ANIMATIONS
     // ============================================================
     // Position the character group at charPos
     character.position.copy(charPos);
@@ -308,6 +342,89 @@ function animate() {
     // character.rotation.y = 0 → faces -Z in Three.js. ✓
     // So: character.rotation.y = theta (directly!)
     character.rotation.y = theta;
+
+    // ============================================================
+    // 3.1) DETECT CHARACTER STATE (for animations)
+    // ============================================================
+    // Check if character is moving (any WASD key pressed)
+    const isMoving = keys.w || keys.a || keys.s || keys.d;
+    const isJumping = !onGround && vertVelocity > 0;  // Moving upward
+    const isFalling = !onGround && vertVelocity <= 0; // Moving downward
+
+    // Increment animation time (used for cycling animations)
+    animationTime += 0.016; // ~60fps, so ~0.016 seconds per frame
+
+    // ============================================================
+    // 3.2) RESET TO DEFAULT POSITIONS (before applying animations)
+    // ============================================================
+    // Reset all parts to original positions/rotations
+    leftArm.position.copy(originalPositions.leftArm);
+    rightArm.position.copy(originalPositions.rightArm);
+    leftLeg.position.copy(originalPositions.leftLeg);
+    rightLeg.position.copy(originalPositions.rightLeg);
+    
+    leftArm.rotation.set(0, 0, 0);
+    rightArm.rotation.set(0, 0, 0);
+    leftLeg.rotation.set(0, 0, 0);
+    rightLeg.rotation.set(0, 0, 0);
+    body.rotation.set(0, 0, 0);
+    head.rotation.set(0, 0, 0);
+
+    // ============================================================
+    // 3.3) APPLY ANIMATIONS BASED ON STATE
+    // ============================================================
+    
+    if (isJumping || isFalling) {
+        // ========================================================
+        // JUMPING ANIMATION: Arms up, legs tuck
+        // ========================================================
+        // Lift arms up (rotate around X axis at shoulder)
+        leftArm.rotation.x = -jumpArmLift;   // Rotate forward/up
+        rightArm.rotation.x = -jumpArmLift;
+        
+        // Tuck legs (rotate around X axis at hip)
+        leftLeg.rotation.x = jumpLegTuck;    // Rotate backward/up
+        rightLeg.rotation.x = jumpLegTuck;
+        
+        // Slight body lean forward when jumping
+        body.rotation.x = 0.2;
+        
+    } else if (isMoving) {
+        // ========================================================
+        // WALKING ANIMATION: Arms and legs swing opposite
+        // ========================================================
+        // Use sin/cos to create smooth swinging motion
+        // Left arm and right leg swing together (opposite of right arm/left leg)
+        const walkCycle = Math.sin(animationTime * walkSpeed);
+        
+        // Arms swing forward/back (rotate around X axis at shoulder)
+        // Left arm swings forward when right arm swings back
+        leftArm.rotation.x = -walkCycle * walkArmSwing;   // Forward/back swing
+        rightArm.rotation.x = walkCycle * walkArmSwing;  // Opposite direction
+        
+        // Legs swing forward/back (rotate around X axis at hip)
+        // Left leg swings forward when right leg swings back
+        leftLeg.rotation.x = walkCycle * walkLegSwing;    // Forward/back swing
+        rightLeg.rotation.x = -walkCycle * walkLegSwing;  // Opposite direction
+        
+        // Slight body bob when walking (moves up/down slightly)
+        body.position.y = 0.2 + Math.abs(walkCycle) * 0.03;
+        
+    } else {
+        // ========================================================
+        // IDLE ANIMATION: Gentle breathing/bobbing
+        // ========================================================
+        // Character gently bobs up and down (breathing effect)
+        const idleBob = Math.sin(animationTime * idleBobSpeed) * idleBobAmount;
+        
+        // Slight body movement (breathing)
+        body.position.y = 0.2 + idleBob;
+        head.position.y = 0.7 + idleBob * 0.5;  // Head moves less
+        
+        // Very slight arm movement (subtle idle animation)
+        leftArm.rotation.x = Math.sin(animationTime * idleBobSpeed * 0.5) * 0.1;
+        rightArm.rotation.x = -Math.sin(animationTime * idleBobSpeed * 0.5) * 0.1;
+    }
 
     // ============================================================
     // 4) CAMERA POSITIONING (first-person or third-person)

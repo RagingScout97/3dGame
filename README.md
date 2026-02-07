@@ -9,6 +9,7 @@ A simple 3D browser-based game built with JavaScript and Three.js, featuring smo
 - ✅ Camera-relative movement (movement matches where you're looking)
 - ✅ First-person and third-person camera modes (toggle with V key)
 - ✅ Jump mechanics with gravity
+- ✅ Character animations (walking, jumping, idle)
 - ✅ Grid visualization for better spatial awareness
 - ✅ Optimized for performance (60+ FPS)
 
