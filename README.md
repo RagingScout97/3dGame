@@ -7,6 +7,8 @@ A simple 3D browser-based game built with JavaScript and Three.js, featuring smo
 - ✅ Smooth camera movement (WASD controls)
 - ✅ Mouse look with pointer lock (no flicker)
 - ✅ Camera-relative movement (movement matches where you're looking)
+- ✅ First-person and third-person camera modes (toggle with V key)
+- ✅ Jump mechanics with gravity
 - ✅ Grid visualization for better spatial awareness
 - ✅ Optimized for performance (60+ FPS)
 
@@ -50,6 +52,8 @@ npm run dev
 - **S** - Move backward
 - **A** - Strafe left
 - **D** - Strafe right
+- **Space** - Jump
+- **V** - Toggle camera mode (first-person ↔ third-person)
 - **Mouse** - Look around
 - **ESC** - Unlock mouse pointer
 

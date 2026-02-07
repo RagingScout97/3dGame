@@ -107,35 +107,47 @@ let vertVelocity = 0;
 let onGround = true;
 
 // ================================================================
-// CAMERA ORBIT VARIABLES
+// CAMERA MODE & ORBIT VARIABLES
 // ================================================================
-// We use two angles to position the camera around the character:
-//   theta = horizontal orbit angle (yaw). 0 = camera behind character on +Z side.
-//   phi   = vertical orbit angle (pitch). Higher = camera is higher above character.
+// Camera can be in two modes:
+//   - Third-person: orbits around character (Roblox-style)
+//   - First-person: camera inside character's head (FPS-style)
+
+let cameraMode = 'third-person';  // 'first-person' or 'third-person'
+
+// We use two angles to control camera rotation:
+//   theta = horizontal rotation (yaw). Controls left/right looking.
+//   phi   = vertical rotation (pitch). Controls up/down looking.
+//
+// In third-person: phi is orbit angle (how high camera is above character)
+// In first-person: phi is pitch angle (how much camera looks up/down)
 //
 // REFERENCE: This follows the same spherical coordinate approach as
 // Three.js OrbitControls (see: three.js/examples/jsm/controls/OrbitControls.js)
 //
 // KEY CONVENTION:
-//   - theta = 0: camera at +Z relative to character, character faces -Z
-//   - character.rotation.y = theta makes character face AWAY from camera
-//   - Mouse right (positive deltaX) → theta DECREASES → character turns right
-//     (because Three.js positive rotation = counterclockwise, and right = clockwise)
+//   - theta = 0: character faces -Z direction
+//   - Mouse right (positive deltaX) → theta DECREASES → turn right
+//   - Mouse down (positive deltaY) → phi changes based on mode
 
-let theta = 0;              // horizontal orbit angle (radians)
-let phi = 0.4;              // vertical orbit angle (radians), ~23° above horizontal
-const camDist = 5;          // distance from character to camera
+let theta = 0;              // horizontal rotation (yaw) in radians
+let phi = 0.4;              // vertical rotation (pitch/orbit) in radians
+const camDist = 5;          // distance from character to camera (third-person only)
 const sensitivity = 0.003;  // mouse sensitivity
 
-// Phi limits (prevent camera going underground or directly overhead)
-const PHI_MIN = 0.05;       // just above ground level
-const PHI_MAX = 1.4;        // ~80° above (nearly overhead)
+// Phi limits for third-person orbit (prevent camera going underground or overhead)
+const PHI_MIN_ORBIT = 0.05;  // just above ground level
+const PHI_MAX_ORBIT = 1.4;   // ~80° above (nearly overhead)
+
+// Phi limits for first-person pitch (prevent looking too far up/down)
+const PHI_MIN_PITCH = -1.4;  // ~80° down (can't look straight down)
+const PHI_MAX_PITCH = 1.4;  // ~80° up (can't look straight up)
 
 // ================================================================
 // INPUT TRACKING
 // ================================================================
 
-const keys = { w: false, a: false, s: false, d: false, space: false };
+const keys = { w: false, a: false, s: false, d: false, space: false, v: false };
 
 window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyW') keys.w = true;
@@ -143,6 +155,23 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyS') keys.s = true;
     if (e.code === 'KeyD') keys.d = true;
     if (e.code === 'Space') keys.space = true;
+    if (e.code === 'KeyV') {
+        // Toggle camera mode (only on keydown, not keyup, to prevent rapid toggling)
+        if (!keys.v) {  // Only toggle once per key press
+            keys.v = true;
+            const wasFirstPerson = (cameraMode === 'first-person');
+            cameraMode = wasFirstPerson ? 'third-person' : 'first-person';
+            
+            // Reset phi when switching modes for smooth transition
+            if (cameraMode === 'first-person') {
+                phi = 0;  // Start looking straight ahead in first-person
+            } else {
+                phi = 0.4;  // Start at default orbit angle in third-person
+            }
+            
+            console.log(`Camera mode: ${cameraMode}`);
+        }
+    }
 });
 
 window.addEventListener('keyup', (e) => {
@@ -151,6 +180,7 @@ window.addEventListener('keyup', (e) => {
     if (e.code === 'KeyS') keys.s = false;
     if (e.code === 'KeyD') keys.d = false;
     if (e.code === 'Space') keys.space = false;
+    if (e.code === 'KeyV') keys.v = false;
 });
 
 // ================================================================
@@ -205,12 +235,18 @@ document.addEventListener('mousemove', (event) => {
     // Filter out abnormally large movements (browser bug protection)
     if (Math.abs(dx) > 100 || Math.abs(dy) > 100) return;
 
-    // Update orbit angles
+    // Update rotation angles
     theta -= dx * sensitivity;   // mouse right → theta decreases → turn right
-    phi   += dy * sensitivity;   // mouse down  → phi decreases  → camera lowers
+    phi   += dy * sensitivity;   // mouse down  → phi increases (inverted vertical)
 
-    // Clamp phi to prevent going underground or flipping overhead
-    phi = Math.max(PHI_MIN, Math.min(PHI_MAX, phi));
+    // Clamp phi based on camera mode
+    if (cameraMode === 'third-person') {
+        // Third-person: phi is orbit angle (how high camera is above character)
+        phi = Math.max(PHI_MIN_ORBIT, Math.min(PHI_MAX_ORBIT, phi));
+    } else {
+        // First-person: phi is pitch angle (how much camera looks up/down)
+        phi = Math.max(PHI_MIN_PITCH, Math.min(PHI_MAX_PITCH, phi));
+    }
 });
 
 // ================================================================
@@ -274,21 +310,54 @@ function animate() {
     character.rotation.y = theta;
 
     // ============================================================
-    // 4) CAMERA POSITIONING (spherical orbit around character)
+    // 4) CAMERA POSITIONING (first-person or third-person)
     // ============================================================
-    // Camera orbits the character using spherical coordinates:
-    //   x = dist * cos(phi) * sin(theta)    ← horizontal offset
-    //   y = dist * sin(phi)                 ← vertical offset (height)
-    //   z = dist * cos(phi) * cos(theta)    ← horizontal offset
-    //
-    // Camera is placed at charPos + offset, then looks at character.
+    
+    if (cameraMode === 'first-person') {
+        // ========================================================
+        // FIRST-PERSON MODE: Camera inside character's head
+        // ========================================================
+        // Position camera at character's eye level (head position)
+        // Character head is at y + 0.7 relative to character center
+        const eyeHeight = 0.7;  // height of eyes above character center
+        camera.position.x = charPos.x;
+        camera.position.y = charPos.y + eyeHeight;
+        camera.position.z = charPos.z;
 
-    camera.position.x = charPos.x + camDist * Math.cos(phi) * Math.sin(theta);
-    camera.position.y = charPos.y + camDist * Math.sin(phi);
-    camera.position.z = charPos.z + camDist * Math.cos(phi) * Math.cos(theta);
+        // Rotate camera directly (yaw + pitch)
+        // theta controls horizontal rotation (yaw)
+        // phi controls vertical rotation (pitch)
+        // In Three.js, positive X rotation = looking down, negative = looking up
+        camera.rotation.order = 'YXZ';  // Y first (yaw), then X (pitch), then Z (roll)
+        camera.rotation.y = theta;      // Horizontal rotation (yaw)
+        camera.rotation.x = -phi;       // Vertical rotation (pitch, negated for correct direction)
+        camera.rotation.z = 0;          // No roll
 
-    // Camera always looks at the character (slightly above center for better view)
-    camera.lookAt(charPos.x, charPos.y + 0.5, charPos.z);
+        // Hide character body in first-person (only show if needed for debugging)
+        // We'll make the character invisible by setting its scale to 0
+        // Or we could hide specific parts - for now, hide entire character
+        character.visible = false;
+    } else {
+        // ========================================================
+        // THIRD-PERSON MODE: Camera orbits around character
+        // ========================================================
+        // Camera orbits the character using spherical coordinates:
+        //   x = dist * cos(phi) * sin(theta)    ← horizontal offset
+        //   y = dist * sin(phi)                 ← vertical offset (height)
+        //   z = dist * cos(phi) * cos(theta)    ← horizontal offset
+        //
+        // Camera is placed at charPos + offset, then looks at character.
+
+        camera.position.x = charPos.x + camDist * Math.cos(phi) * Math.sin(theta);
+        camera.position.y = charPos.y + camDist * Math.sin(phi);
+        camera.position.z = charPos.z + camDist * Math.cos(phi) * Math.cos(theta);
+
+        // Camera always looks at the character (slightly above center for better view)
+        camera.lookAt(charPos.x, charPos.y + 0.5, charPos.z);
+
+        // Show character in third-person
+        character.visible = true;
+    }
 
     // ============================================================
     // 5) DEBUG LOG (once per second)
